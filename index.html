@@ -411,6 +411,45 @@ button,.btn,.closebtn{
     width:100%;
   }
 }
+
+/* ===== Site footer (hidden by default; only shown on victory/gameover) ===== */
+.siteFooter{
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, calc(8px + env(safe-area-inset-bottom, 0px)));
+  transform: translateX(-50%);
+  z-index: 100; /* above veil(98) and overlays (99) */
+  pointer-events: auto;
+  display: none; /* <-- default hidden */
+}
+.siteFooter a{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 800;
+  letter-spacing: .02em;
+  background: linear-gradient(145deg, rgba(255,255,255,.06), rgba(0,0,0,.35));
+  box-shadow: inset 2px 2px 0 var(--bevel-top), inset -2px -2px 0 var(--bevel-bottom), 0 6px 14px rgba(0,0,0,.35);
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: auto;
+}
+.siteFooter a:hover{ filter: brightness(1.08); }
+.siteFooter img{
+  width: 20px; height: 20px; object-fit: contain; display:block;
+}
+.siteFooter span{
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 420px){
+  .siteFooter span{ display:none; }
+  .siteFooter a{ padding: 9px 10px; }
+}
   </style>
 </head>
 <body>
@@ -481,6 +520,15 @@ button,.btn,.closebtn{
   <!-- Countdown -->
   <div class="countdown" id="count"><div class="num" id="countNum">3</div></div>
 
+  <!-- Footer (outside the console container; hidden by default—shown only on victory/gameover) -->
+  <footer class="siteFooter" id="siteFooter" aria-label="Brand">
+    <a href="https://ironsignalworks.com" target="_blank" rel="noopener"
+       aria-label="Visit Iron Signal Works">
+      <img src="logo.png" alt="" />
+      <span>Iron Signal Works — Cold Code, Hot Circuits.</span>
+    </a>
+  </footer>
+
 <script>
 /* ======= AUDIO ENGINE (WebAudio with safe fallbacks) ======= */
 class ReakAudio{
@@ -505,11 +553,10 @@ class ReakAudio{
       count_tick: 'audio/count_tick.mp3'
     };
   }
-
   async ensureContext(){
     if(this.ctx) return;
     const C = window.AudioContext || window.webkitAudioContext;
-    if(!C) return; // No WebAudio — we’ll silently skip
+    if(!C) return;
     this.ctx = new C();
     this.gainMain = this.ctx.createGain();
     this.gainMain.gain.value = 0.9;
@@ -519,12 +566,10 @@ class ReakAudio{
     this.gainBgm.gain.value = 0.0;
     this.gainBgm.connect(this.gainMain);
 
-    // Preload (non-blocking)
-    Object.entries(this.AUDIO_ASSETS).forEach(([name, url])=> {
-      this.loadBuffer(name, url).catch(()=>{ /* fallback synth on demand */ });
+    Object.entries(this.AUDIO_ASSETS).forEach(([name, url])=>{
+      this.loadBuffer(name,url).catch(()=>{});
     });
   }
-
   async resume(){
     await this.ensureContext();
     if(this.ctx && this.ctx.state !== 'running'){
@@ -532,8 +577,7 @@ class ReakAudio{
     }
     this.startedOnce = true;
   }
-
-  async loadBuffer(name, url){
+  async loadBuffer(name,url){
     if(!this.ctx) await this.ensureContext();
     if(!this.ctx) return;
     const res = await fetch(url);
@@ -541,95 +585,78 @@ class ReakAudio{
     const buf = await this.ctx.decodeAudioData(arr);
     this.buffers.set(name, buf);
   }
-
-  play(name, opts={}){
+  play(name,opts={}){
     if(!this.enabled) return;
     if(!this.ctx){ this.ensureContext(); return; }
-    if(this.ctx.state !== 'running') return;
-
-    const buf = this.buffers.get(name);
+    if(this.ctx.state!=='running') return;
+    const buf=this.buffers.get(name);
     if(buf){
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      if(opts.detune) try{ src.detune.value = opts.detune; }catch(_){}
-      const g = this.ctx.createGain();
-      g.gain.value = (opts.gain ?? 0.8);
+      const src=this.ctx.createBufferSource();
+      src.buffer=buf;
+      if(opts.detune) try{ src.detune.value=opts.detune; }catch(_){}
+      const g=this.ctx.createGain();
+      g.gain.value=(opts.gain??0.8);
       src.connect(g).connect(this.gainMain);
       src.start(0);
       return;
     }
-    // Fallback synth blip
-    this.beep(opts.freq ?? 600, opts.len ?? 0.06, opts.gain ?? 0.06);
+    this.beep(opts.freq??600, opts.len??0.06, opts.gain??0.06);
   }
-
   beep(freq=600, dur=0.06, gain=0.06){
     if(!this.enabled) return;
-    if(!this.ctx || this.ctx.state !== 'running') return;
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    o.frequency.value = freq;
-    o.type = 'square';
-    g.gain.value = gain;
+    if(!this.ctx || this.ctx.state!=='running') return;
+    const o=this.ctx.createOscillator();
+    const g=this.ctx.createGain();
+    o.frequency.value=freq; o.type='square';
+    g.gain.value=gain;
     o.connect(g).connect(this.gainMain);
-    o.start();
-    o.stop(this.ctx.currentTime + dur);
+    o.start(); o.stop(this.ctx.currentTime+dur);
   }
-
-  // Background music (loop)
   startBgm(name='bg_loop', fade=0.6){
-    if(!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
+    if(!this.enabled || !this.ctx || this.ctx.state!=='running') return;
     this.stopBgm();
-    const buf = this.buffers.get(name);
+    const buf=this.buffers.get(name);
     if(buf){
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      src.connect(this.gainBgm);
-      src.start(0);
-      this.loops.set('bgm', src);
-      this.fadeGain(this.gainBgm, 0.0, 0.6, fade);
+      const src=this.ctx.createBufferSource();
+      src.buffer=buf; src.loop=true; src.connect(this.gainBgm); src.start(0);
+      this.loops.set('bgm',src);
+      this.fadeGain(this.gainBgm,0.0,0.6,fade);
     }else{
-      // Fallback: very quiet triangle drone
-      const o = this.ctx.createOscillator();
-      o.type='triangle'; o.frequency.value = 180;
-      o.connect(this.gainBgm); o.start();
-      this.loops.set('bgm', o);
-      this.fadeGain(this.gainBgm, 0.0, 0.15, 0.6);
+      const o=this.ctx.createOscillator(); o.type='triangle'; o.frequency.value=180;
+      o.connect(this.gainBgm); o.start(); this.loops.set('bgm',o);
+      this.fadeGain(this.gainBgm,0.0,0.15,0.6);
     }
   }
-
   stopBgm(fade=0.4){
-    const src = this.loops.get('bgm');
-    if(!src) return;
-    this.fadeGain(this.gainBgm, this.gainBgm.gain.value, 0.0, fade, ()=> {
+    const src=this.loops.get('bgm'); if(!src) return;
+    this.fadeGain(this.gainBgm,this.gainBgm.gain.value,0.0,fade,()=>{
       try{ src.stop ? src.stop() : src.disconnect(); }catch(_){}
       this.loops.delete('bgm');
     });
   }
-
-  fadeGain(node, from, to, secs, done){
+  fadeGain(node,from,to,secs,done){
     if(!this.ctx) return;
-    const now = this.ctx.currentTime;
+    const now=this.ctx.currentTime;
     try{
-      node.gain.setValueAtTime(from, now);
-      node.gain.linearRampToValueAtTime(to, now + secs);
-    }catch(_){ node.gain.value = to; }
-    if(done) setTimeout(done, secs*1000 + 10);
+      node.gain.setValueAtTime(from,now);
+      node.gain.linearRampToValueAtTime(to, now+secs);
+    }catch(_){ node.gain.value=to; }
+    if(done) setTimeout(done, secs*1000+10);
   }
-
   setMuted(m){
-    this.enabled = !m;
+    this.enabled=!m;
     if(!this.ctx) return;
     this.gainMain.gain.value = m ? 0 : 0.9;
   }
 }
 
-/* ======= GAME (your original, with small additions) ======= */
+/* ======= GAME (with joystick + overlay footer control) ======= */
 (function(){
   const cvs = document.getElementById('game');
   const ctx = cvs.getContext('2d');
 
-  // Elements for sizing
+  const siteFooter = document.getElementById('siteFooter');
+
   const consoleEl = document.querySelector('.console');
   const headEl = document.querySelector('.console-head');
   const footEl = document.querySelector('.console-foot');
@@ -644,38 +671,48 @@ class ReakAudio{
   const audio = new ReakAudio();
   const muteBtn = document.getElementById('muteBtn');
 
-  // Square native canvas resolution
-  const NATIVE_SIZE = 512;
+  // Grid config
+  let COLS = 22, ROWS = 22;
+  const isTouchDevice = ()=> matchMedia('(hover:none) and (pointer:coarse)').matches;
+  const isDesktopFinePointer = ()=> matchMedia('(hover:hover) and (pointer:fine)').matches;
+  function configureGrid(){ if(isTouchDevice()){ COLS=20; ROWS=20; } else { COLS=22; ROWS=22; } }
+  configureGrid();
 
-  // 20-level map data (same as before)
+  // Colors
+  const WALL='#172027', FLOOR='#0a0f13', PELLET='#9ee6b7', PLAYER='#3dff7a', RADIATION='#ff4d4d';
+
+  // RNG
+  const RAND_A=1664525, RAND_C=1013904223, RAND_M=4294967296;
+  function makeRng(seed){ let s=seed>>>0; if(!s) s=0x1a2b3c4d; return ()=> ((s=(s*RAND_A+RAND_C)>>>0)/RAND_M); }
+
+  // Levels
   const RADIO_LEVELS = [
-    {rank:1,  loc:'Fission Gardens',       danger:'☣️',          notes:'Overgrown and humming — deceptively calm.'},
-    {rank:2,  loc:'Glowworm Hall',         danger:'☢️',          notes:'Mild residual luminescence; stay under an hour.'},
-    {rank:3,  loc:'Iodine Vaults',         danger:'☢️',          notes:'Mostly stable isotopes… mostly.'},
-    {rank:4,  loc:'Helium Loop Junction',  danger:'☣️',          notes:'Low radiation, but pressure failures are brutal.'},
-    {rank:5,  loc:'Gamma Stairwell',       danger:'☢️',          notes:'Hot spots only near the landing lights.'},
-    {rank:6,  loc:'Turbine Catwalks',      danger:'⚙️',          notes:'More mechanical hazard than radioactive.'},
-    {rank:7,  loc:'Moderator Shaft',       danger:'☢️',          notes:'Beta radiation spikes during maintenance.'},
-    {rank:8,  loc:'Core Breach Gallery',   danger:'☢️☢️',        notes:'Faint blue Cherenkov glow — don’t linger.'},
-    {rank:9,  loc:'Hot Cell Annex',        danger:'☢️☢️',        notes:'Shielded, but glass cracks hum faintly.'},
-    {rank:10, loc:'Cobalt Gallery',        danger:'☢️☢️',        notes:'Gamma haze dances across the walls.'},
-    {rank:11, loc:'Decay Pools',           danger:'☢️☢️',        notes:'The water bubbles when you whisper.'},
-    {rank:12, loc:'Bunker Delta-9',        danger:'☢️☢️',        notes:'Old reactor materials in containment. Allegedly.'},
-    {rank:13, loc:'Neutron Spire',         danger:'☢️☢️☢️',      notes:'Constant low-frequency radiation pulses.'},
-    {rank:14, loc:'The Half-Life Bridge',  danger:'☢️☢️☢️',      notes:'Crossing time correlates with lifespan.'},
-    {rank:15, loc:'Coolant Cathedral',     danger:'☢️☢️☢️',      notes:'Echoes amplify Geiger ticks into hymns.'},
-    {rank:16, loc:'The Exclusion Promenade', danger:'☢️☢️☢️',    notes:'Banned zone for a reason. No birds.'},
-    {rank:17, loc:'Control Rod Graveyard', danger:'☢️☢️☢️☢️',    notes:'Spent fuel rods rust in open air.'},
-    {rank:18, loc:'Sarcophagus Deep',      danger:'☢️☢️☢️☢️',    notes:'Beneath the concrete coffin — unstable readings.'},
-    {rank:19, loc:'Plutonium Trench',      danger:'☢️☢️☢️☢️',    notes:'Lethal dust, heavy alpha scatter.'},
-    {rank:20, loc:'Annihilation Deck',     danger:'☢️☢️☢️☢️☢️',  notes:'No readings. Just silence and light.'},
+    {rank:1,loc:'Fission Gardens',danger:'☣️',notes:'Overgrown and humming — deceptively calm.'},
+    {rank:2,loc:'Glowworm Hall',danger:'☢️',notes:'Mild residual luminescence; stay under an hour.'},
+    {rank:3,loc:'Iodine Vaults',danger:'☢️',notes:'Mostly stable isotopes… mostly.'},
+    {rank:4,loc:'Helium Loop Junction',danger:'☣️',notes:'Low radiation, but pressure failures are brutal.'},
+    {rank:5,loc:'Gamma Stairwell',danger:'☢️',notes:'Hot spots only near the landing lights.'},
+    {rank:6,loc:'Turbine Catwalks',danger:'⚙️',notes:'More mechanical hazard than radioactive.'},
+    {rank:7,loc:'Moderator Shaft',danger:'☢️',notes:'Beta radiation spikes during maintenance.'},
+    {rank:8,loc:'Core Breach Gallery',danger:'☢️☢️',notes:'Faint blue Cherenkov glow — don’t linger.'},
+    {rank:9,loc:'Hot Cell Annex',danger:'☢️☢️',notes:'Shielded, but glass cracks hum faintly.'},
+    {rank:10,loc:'Cobalt Gallery',danger:'☢️☢️',notes:'Gamma haze dances across the walls.'},
+    {rank:11,loc:'Decay Pools',danger:'☢️☢️',notes:'The water bubbles when you whisper.'},
+    {rank:12,loc:'Bunker Delta-9',danger:'☢️☢️',notes:'Old reactor materials in containment. Allegedly.'},
+    {rank:13,loc:'Neutron Spire',danger:'☢️☢️☢️',notes:'Constant low-frequency radiation pulses.'},
+    {rank:14,loc:'The Half-Life Bridge',danger:'☢️☢️☢️',notes:'Crossing time correlates with lifespan.'},
+    {rank:15,loc:'Coolant Cathedral',danger:'☢️☢️☢️',notes:'Echoes amplify Geiger ticks into hymns.'},
+    {rank:16,loc:'The Exclusion Promenade',danger:'☢️☢️☢️',notes:'Banned zone for a reason. No birds.'},
+    {rank:17,loc:'Control Rod Graveyard',danger:'☢️☢️☢️☢️',notes:'Spent fuel rods rust in open air.'},
+    {rank:18,loc:'Sarcophagus Deep',danger:'☢️☢️☢️☢️',notes:'Beneath the concrete coffin — unstable readings.'},
+    {rank:19,loc:'Plutonium Trench',danger:'☢️☢️☢️☢️',notes:'Lethal dust, heavy alpha scatter.'},
+    {rank:20,loc:'Annihilation Deck',danger:'☢️☢️☢️☢️☢️',notes:'No readings. Just silence and light.'},
   ];
-
   function renderMapModal(){
-    mapTableBody.innerHTML = '';
+    mapTableBody.innerHTML='';
     for(const row of RADIO_LEVELS){
-      const tr = document.createElement('tr');
-      tr.className = 'maprow';
+      const tr=document.createElement('tr');
+      tr.className='maprow';
       tr.innerHTML =
         '<td class="mapcell maprank">'+row.rank+'</td>'+
         '<td class="mapcell maploc">'+row.loc+'</td>'+
@@ -684,125 +721,70 @@ class ReakAudio{
       mapTableBody.appendChild(tr);
     }
   }
+  function levelNameFor(n){ const i=Math.max(1,Math.min(20,n)); return `Rank ${i} — ${RADIO_LEVELS[i-1].loc}`; }
 
-  // Responsive grid
-  let COLS = 22;
-  let ROWS = 22;
-  function isTouchDevice(){ return matchMedia('(hover:none) and (pointer:coarse)').matches; }
-  function isDesktopFinePointer(){ return matchMedia('(hover:hover) and (pointer:fine)').matches; }
-  function configureGrid(){ if(isTouchDevice()){ COLS = 20; ROWS = 20; } else { COLS = 22; ROWS = 22; } }
-  configureGrid();
-
-  // Colors
-  const WALL = '#172027';
-  const FLOOR = '#0a0f13';
-  const PELLET = '#9ee6b7';
-  const PLAYER = '#3dff7a';
-  const RADIATION = '#ff4d4d';
-
-  // RNG
-  const RAND_A = 1664525, RAND_C = 1013904223, RAND_M = 4294967296;
-  function makeRng(seed){
-    let s = seed >>> 0;
-    if(!s) s = 0x1a2b3c4d;
-    return ()=> ((s = (s * RAND_A + RAND_C) >>> 0) / RAND_M);
-  }
-
-  let map = [];
-  let MCOLS = COLS, MROWS = ROWS, pelletsTotal = 0;
-  let runSeed = (Math.random()*0xffffffff)>>>0;
-  let mapNonce = 0;
-  let pendingRunReset = true;
-
-  function nextMapSeed(level){
-    mapNonce = (mapNonce + 1) >>> 0;
-    return (runSeed ^ (level * 0x9e3779b9) ^ (mapNonce * 0x45d9f3b)) >>> 0;
-  }
-
-  function buildRawForLevel(n, seed){
-    const rowsCount = ROWS, colsCount = COLS;
-    const rng = makeRng(seed >>> 0);
-
-    // Walls then maze carve (step by 2)
-    const grid = Array.from({length:rowsCount}, ()=> Array(colsCount).fill('1'));
-    const stack = [[1,1]];
-    grid[1][1]='0';
-    const carveDirs = [[2,0],[-2,0],[0,2],[0,-2]];
+  // Map build
+  let map=[], MCOLS=COLS, MROWS=ROWS, pelletsTotal=0;
+  let runSeed=(Math.random()*0xffffffff)>>>0, mapNonce=0, pendingRunReset=true;
+  function nextMapSeed(level){ mapNonce=(mapNonce+1)>>>0; return (runSeed ^ (level*0x9e3779b9) ^ (mapNonce*0x45d9f3b))>>>0; }
+  function buildRawForLevel(n,seed){
+    const rowsCount=ROWS, colsCount=COLS, rng=makeRng(seed>>>0);
+    const grid=Array.from({length:rowsCount},()=>Array(colsCount).fill('1'));
+    const stack=[[1,1]]; grid[1][1]='0';
+    const carveDirs=[[2,0],[-2,0],[0,2],[0,-2]];
     while(stack.length){
-      const [cx,cy] = stack[stack.length-1];
-      const neighbors=[];
+      const [cx,cy]=stack[stack.length-1]; const neighbors=[];
       for(const [dx,dy] of carveDirs){
         const nx=cx+dx, ny=cy+dy;
-        if(ny<=0 || nx<=0 || ny>=rowsCount-1 || nx>=colsCount-1) continue;
-        if(grid[ny][nx] !== '1') continue;
+        if(ny<=0||nx<=0||ny>=rowsCount-1||nx>=colsCount-1) continue;
+        if(grid[ny][nx]!=='1') continue;
         neighbors.push([nx,ny,dx/2,dy/2]);
       }
       if(neighbors.length){
-        const [nx,ny,wx,wy] = neighbors[Math.floor(rng()*neighbors.length)];
-        grid[cy+wy][cx+wx]='0';
-        grid[ny][nx]='0';
-        stack.push([nx,ny]);
-      }else{
-        stack.pop();
-      }
+        const [nx,ny,wx,wy]=neighbors[Math.floor(rng()*neighbors.length)];
+        grid[cy+wy][cx+wx]='0'; grid[ny][nx]='0'; stack.push([nx,ny]);
+      }else stack.pop();
     }
-
-    // Loops
-    const loopDensity = isTouchDevice() ? 0.06 : 0.10;
-    const extra = Math.floor((rowsCount*colsCount)*loopDensity);
+    const loopDensity=isTouchDevice()?0.06:0.10;
+    const extra=Math.floor((rowsCount*colsCount)*loopDensity);
     for(let i=0;i<extra;i++){
-      const x = 1 + Math.floor(rng()*(colsCount-2));
-      const y = 1 + Math.floor(rng()*(rowsCount-2));
-      if(grid[y][x] !== '1') continue;
+      const x=1+Math.floor(rng()*(colsCount-2)), y=1+Math.floor(rng()*(rowsCount-2));
+      if(grid[y][x]!=='1') continue;
       let open=0;
-      if(grid[y-1][x] !== '1') open++;
-      if(grid[y+1][x] !== '1') open++;
-      if(grid[y][x-1] !== '1') open++;
-      if(grid[y][x+1] !== '1') open++;
+      if(grid[y-1][x]!=='1') open++;
+      if(grid[y+1][x]!=='1') open++;
+      if(grid[y][x-1]!=='1') open++;
+      if(grid[y][x+1]!=='1') open++;
       if(open>=2) grid[y][x]='0';
     }
-
-    // carve corners
     grid[1][2]='0'; grid[2][1]='0';
     grid[rowsCount-2][colsCount-2]='0';
     grid[rowsCount-2][colsCount-3]='0';
     grid[rowsCount-3][colsCount-2]='0';
-
     const spawn={x:1,y:1};
-    // Far exit by BFS
-    const q=[[spawn.x,spawn.y,0]];
-    const visited=Array.from({length:rowsCount},()=>Array(colsCount).fill(false));
-    visited[spawn.y][spawn.x]=true;
-    let far={x:spawn.x,y:spawn.y,d:0};
+    const q=[[spawn.x,spawn.y,0]], visited=Array.from({length:rowsCount},()=>Array(colsCount).fill(false));
+    visited[spawn.y][spawn.x]=true; let far={x:spawn.x,y:spawn.y,d:0};
     while(q.length){
-      const [x,y,d]=q.shift();
-      if(d>far.d) far={x,y,d};
+      const [x,y,d]=q.shift(); if(d>far.d) far={x,y,d};
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
         const nx=x+dx, ny=y+dy;
-        if(nx<=0 || nx>=colsCount-1 || ny<=0 || ny>=rowsCount-1) continue;
+        if(nx<=0||nx>=colsCount-1||ny<=0||ny>=rowsCount-1) continue;
         if(visited[ny][nx]) continue;
         if(grid[ny][nx]==='1') continue;
-        visited[ny][nx]=true;
-        q.push([nx,ny,d+1]);
+        visited[ny][nx]=true; q.push([nx,ny,d+1]);
       }
     }
-    const farThreshold = isTouchDevice() ? 3 : 4;
-    let exitPos = far.d>farThreshold ? far : spawn;
+    const farThreshold=isTouchDevice()?3:4;
+    let exitPos= far.d>farThreshold ? far : spawn;
     if(exitPos.x===spawn.x && exitPos.y===spawn.y){
       outer: for(let y=rowsCount-2;y>0;y--){
         for(let x=colsCount-2;x>0;x--){
-          if((x!==spawn.x || y!==spawn.y) && grid[y][x]!=='1'){
-            exitPos={x,y,d:0};
-            break outer;
-          }
+          if((x!==spawn.x||y!==spawn.y)&&grid[y][x]!=='1'){ exitPos={x,y,d:0}; break outer; }
         }
       }
     }
     grid[exitPos.y][exitPos.x]='3';
-
-    // Seals
-    let pelletCount=0;
-    const pelletP = isTouchDevice() ? 0.5 : 0.58;
+    let pelletCount=0, pelletP=isTouchDevice()?0.5:0.58;
     for(let y=1;y<rowsCount-1;y++){
       for(let x=1;x<colsCount-1;x++){
         if(grid[y][x]!=='0') continue;
@@ -814,78 +796,42 @@ class ReakAudio{
       if(grid[spawn.y][spawn.x+1]==='0') grid[spawn.y][spawn.x+1]='2';
       else grid[spawn.y+1][spawn.x]='2';
     }
-
-    return grid.map(row=>row.join(''));
+    return grid.map(r=>r.join(''));
   }
-
-  function levelNameFor(n){
-    const i = Math.max(1, Math.min(20, n));
-    const entry = RADIO_LEVELS[i-1];
-    return `Rank ${i} — ${entry.loc}`;
-  }
-
-  // State
-  let level = 1;
-  let score = 0;
-  let high = parseInt(localStorage.getItem('reaktor404_high')||'0')||0;
-
   function buildMapFromRaw(raw){
-    const cols = raw[0].length, rows = raw.length;
-    const map = new Array(rows);
+    const cols=raw[0].length, rows=raw.length, map=new Array(rows);
     for(let y=0;y<rows;y++){
-      let line = raw[y] || '';
-      if(line.length!==cols){ line = (line + '1'.repeat(cols)).slice(0, cols); }
-      const rowArr = new Array(cols);
+      let line=raw[y]||''; if(line.length!==cols) line=(line+'1'.repeat(cols)).slice(0,cols);
+      const rowArr=new Array(cols);
       for(let i=0;i<cols;i++){
-        const ch = line[i] || '1';
-        rowArr[i] = (ch==='1')?1 : (ch==='3')?3 : (ch==='.'||ch==='2')?2 : 0;
+        const ch=line[i]||'1';
+        rowArr[i]=(ch==='1')?1 : (ch==='3')?3 : (ch==='.'||ch==='2')?2 : 0;
       }
-      rowArr[0]=1; rowArr[cols-1]=1;
-      map[y]=rowArr;
+      rowArr[0]=1; rowArr[cols-1]=1; map[y]=rowArr;
     }
     for(let x=0;x<cols;x++){ map[0][x]=1; map[rows-1][x]=1; }
-
-    // Ensure at least one interior exit
     let exitPos=null; for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++) if(map[y][x]===3) exitPos={x,y};
     if(!exitPos){
-      outer: for(let y=rows-3;y>=1;y--){
-        for(let x=cols-3;x>=1;x--){
-          if(map[y][x]!==1){ map[y][x]=3; exitPos={x,y}; break outer; }
-        }
-      }
+      outer: for(let y=rows-3;y>=1;y--) for(let x=cols-3;x>=1;x--) if(map[y][x]!==1){ map[y][x]=3; exitPos={x,y}; break outer; }
     }
-
-    // Sprinkle seals if none
     let pellets=0; for(let y=0;y<rows;y++) for(let x=0;x<cols;x++) if(map[y][x]===2) pellets++;
     if(pellets===0){
-      for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
-        if(map[y][x]===0 && ((x+y)%2===0)) { map[y][x]=2; pellets++; }
-      }
+      for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++) if(map[y][x]===0&&((x+y)%2===0)) { map[y][x]=2; pellets++; }
     }
     pellets=0; for(let y=0;y<rows;y++) for(let x=0;x<cols;x++) if(map[y][x]===2) pellets++;
     return {map, cols, rows, pellets};
   }
-
-  function findPlayerSpawn(map, cols, rows){
-    for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){ const c=map[y][x]; if(c!==1 && c!==3) return {x,y}; }
-    return {x:1,y:1};
-  }
-  function findHazardSpawn(map, cols, rows){
-    for(let y=rows-2;y>=1;y--) for(let x=cols-2;x>=1;x--){ const c=map[y][x]; if(c!==1 && c!==3) return {x,y}; }
-    return {x:cols-2,y:rows-2};
-  }
-  function ensureReachableExit(map, cols, rows, spawn){
+  function findPlayerSpawn(map,cols,rows){ for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){ const c=map[y][x]; if(c!==1&&c!==3) return {x,y}; } return {x:1,y:1}; }
+  function findHazardSpawn(map,cols,rows){ for(let y=rows-2;y>=1;y--) for(let x=cols-2;x>=1;x--){ const c=map[y][x]; if(c!==1&&c!==3) return {x,y}; } return {x:cols-2,y:rows-2}; }
+  function ensureReachableExit(map,cols,rows,spawn){
     let exit=null; for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++) if(map[y][x]===3) exit={x,y};
     const key=(x,y)=>x+','+y; const q=[[spawn.x,spawn.y,0]]; const seen=new Set([key(spawn.x,spawn.y)]); let pathToExit=false; let far={x:spawn.x,y:spawn.y,d:0};
     while(q.length){
-      const [x,y,d]=q.shift();
-      if(exit && x===exit.x && y===exit.y){ pathToExit=true; break; }
+      const [x,y,d]=q.shift(); if(exit&&x===exit.x&&y===exit.y){ pathToExit=true; break; }
       if(d>far.d) far={x,y,d};
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nx=x+dx, ny=y+dy;
-        if(map[ny]?.[nx]!==1){
-          const k=key(nx,ny);
-          if(!seen.has(k)){ seen.add(k); q.push([nx,ny,d+1]); }
+        const nx=x+dx, ny=y+dy; if(map[ny]?.[nx]!==1){
+          const k=key(nx,ny); if(!seen.has(k)){ seen.add(k); q.push([nx,ny,d+1]); }
         }
       }
     }
@@ -893,32 +839,30 @@ class ReakAudio{
   }
 
   // Entities & timing
-  const BASE_PLAYER_DELAY = 3, MIN_PLAYER_DELAY = 2, BASE_RADIO_DELAY = 9;
-  const player = {x:1, y:1, pellets:0, alive:false, stepDelay:BASE_PLAYER_DELAY, stepCooldown:0};
-  let hazards = [];
+  const BASE_PLAYER_DELAY=3, MIN_PLAYER_DELAY=2, BASE_RADIO_DELAY=9;
+  const player={x:1,y:1,pellets:0,alive:false,stepDelay:BASE_PLAYER_DELAY,stepCooldown:0};
+  let hazards=[];
 
-  // UI refs
-  const UI = {
-    menu: document.getElementById('menu'),
-    menuTitle: document.getElementById('menuTitle'),
-    menuSub: document.getElementById('menuSub'),
-    play: document.getElementById('play'),
-    score: document.getElementById('score'),
-    status: document.getElementById('status'),
-    levelName: document.getElementById('levelName'),
-    countWrap: document.getElementById('count'),
-    countNum: document.getElementById('countNum'),
-    veil: document.getElementById('veil'),
-    joyWrap: document.getElementById('joyWrap')
+  // UI
+  const UI={
+    menu:document.getElementById('menu'),
+    menuTitle:document.getElementById('menuTitle'),
+    menuSub:document.getElementById('menuSub'),
+    play:document.getElementById('play'),
+    score:document.getElementById('score'),
+    status:document.getElementById('status'),
+    levelName:document.getElementById('levelName'),
+    countWrap:document.getElementById('count'),
+    countNum:document.getElementById('countNum'),
+    veil:document.getElementById('veil'),
+    joyWrap:document.getElementById('joyWrap')
   };
-  const DEFAULT_MENU_TITLE = UI.menuTitle.textContent;
-  const DEFAULT_MENU_SUB = UI.menuSub.innerHTML;
-  const DEFAULT_MENU_CTA = UI.play.textContent;
+  const DEFAULT_MENU_TITLE=UI.menuTitle.textContent, DEFAULT_MENU_SUB=UI.menuSub.innerHTML, DEFAULT_MENU_CTA=UI.play.textContent;
 
-  let running=false, tick=0, keyStartEnabled=true;
+  let running=false, keyStartEnabled=true;
 
   // Input
-  const keys = new Set();
+  const keys=new Set();
   window.addEventListener('keydown', async e=>{
     keys.add(e.code);
     if(!running && keyStartEnabled && (e.code.startsWith('Arrow')||e.code.startsWith('Key'))){
@@ -928,121 +872,97 @@ class ReakAudio{
   }, {passive:false});
   window.addEventListener('keyup', e=> keys.delete(e.code), {passive:true});
 
-  // Mute button
-  let muted = false;
-  muteBtn.addEventListener('click', async ()=>{
+  // Mute
+  let muted=false;
+  document.getElementById('muteBtn').addEventListener('click', async ()=>{
     await audio.resume();
-    muted = !muted;
-    audio.setMuted(muted);
+    muted=!muted; audio.setMuted(muted);
     muteBtn.textContent = muted ? '🔇' : '🔊';
     audio.play('ui_click', {gain:0.4, freq: muted?320:540});
   });
 
   function resetEntities(){
     player.pellets=0; player.stepCooldown=0; player.stepDelay=BASE_PLAYER_DELAY; player.alive=true;
-    const pSpawn = findPlayerSpawn(map, MCOLS, MROWS);
-    player.x = pSpawn.x; player.y = pSpawn.y;
-    hazards=[];
-    const hazardCount = 1 + Math.floor((level-1)/2);
-    const hSpawn = findHazardSpawn(map, MCOLS, MROWS);
+    const pSpawn=findPlayerSpawn(map,MCOLS,MROWS); player.x=pSpawn.x; player.y=pSpawn.y;
+    hazards=[]; const hazardCount=1+Math.floor((level-1)/2);
+    const hSpawn=findHazardSpawn(map,MCOLS,MROWS);
     for(let i=0;i<hazardCount;i++){
-      hazards.push({x: hSpawn.x, y: hSpawn.y, cooldown:0, base:Math.max(3, BASE_RADIO_DELAY - Math.min(level-1,4) - i)});
+      hazards.push({x:hSpawn.x,y:hSpawn.y,cooldown:0,base:Math.max(3, BASE_RADIO_DELAY - Math.min(level-1,4) - i)});
     }
     syncPlayerSpeed();
   }
+  function syncPlayerSpeed(){ if(hazards.length){ player.stepDelay=Math.min(player.stepDelay,hazards[0].base); player.stepDelay=Math.max(MIN_PLAYER_DELAY,player.stepDelay); } }
 
-  function syncPlayerSpeed(){
-    if(hazards.length){
-      player.stepDelay = Math.min(player.stepDelay, hazards[0].base);
-      player.stepDelay = Math.max(MIN_PLAYER_DELAY, player.stepDelay);
-    }
-  }
-
-  // Overlay helper with kind tagging
-  function showOverlay(title, subtitle, cta, kind = 'menu'){
+  // Overlays (now control footer visibility here)
+  function showOverlay(title,subtitle,cta,kind='menu'){
     if(UI.menu){
       UI.menu.classList.remove('cta--menu','cta--gameover','cta--victory');
-      if(kind === 'menu') UI.menu.classList.add('cta--menu');
-      else if(kind === 'gameover') UI.menu.classList.add('cta--gameover');
-      else if(kind === 'victory') UI.menu.classList.add('cta--victory');
+      if(kind==='menu') UI.menu.classList.add('cta--menu');
+      else if(kind==='gameover') UI.menu.classList.add('cta--gameover');
+      else if(kind==='victory') UI.menu.classList.add('cta--victory');
 
-      UI.menuTitle.textContent = title;
-      UI.menuSub.innerHTML = subtitle;
-      UI.play.textContent = cta;
+      UI.menuTitle.textContent=title;
+      UI.menuSub.innerHTML=subtitle;
+      UI.play.textContent=cta;
       UI.veil.style.display='block';
       UI.menu.style.display='block';
+
+      // Footer only on victory/gameover
+      siteFooter.style.display = (kind==='victory' || kind==='gameover') ? 'block' : 'none';
     }
   }
 
+  // Start / levels
+  let level=1, score=0, high=parseInt(localStorage.getItem('reaktor404_high')||'0')||0;
   function startLevel(n){
-    configureGrid();
-    MCOLS = COLS; MROWS = ROWS;
-    level = n;
+    configureGrid(); MCOLS=COLS; MROWS=ROWS; level=n;
 
-    const raw = buildRawForLevel(level, nextMapSeed(level));
-    const built = buildMapFromRaw(raw);
-    map = built.map; MCOLS=built.cols; MROWS=built.rows; pelletsTotal=built.pellets;
+    const raw=buildRawForLevel(level, nextMapSeed(level));
+    const built=buildMapFromRaw(raw);
+    map=built.map; MCOLS=built.cols; MROWS=built.rows; pelletsTotal=built.pellets;
 
-    const spawn = findPlayerSpawn(map, MCOLS, MROWS);
-    ensureReachableExit(map, MCOLS, MROWS, spawn);
-    document.getElementById('levelName').textContent = levelNameFor(level);
-    resetEntities(); running=true; tick=0;
-    UI.veil.style.display='none'; UI.menu.style.display='none'; mapModal.style.display='none';
-    updateHUD();
-    sizeCanvasToConsole();
+    const spawn=findPlayerSpawn(map,MCOLS,MROWS); ensureReachableExit(map,MCOLS,MROWS,spawn);
+    document.getElementById('levelName').textContent=levelNameFor(level);
+    resetEntities(); running=true; UI.veil.style.display='none'; UI.menu.style.display='none'; mapModal.style.display='none';
+    siteFooter.style.display='none'; /* hide footer during gameplay */
+    updateHUD(); sizeCanvasToConsole();
 
-    audio.startBgm('bg_loop', 0.6);
-    audio.play('ui_open', {gain:0.35, freq:700});
+    audio.startBgm('bg_loop',0.6);
+    audio.play('ui_open',{gain:0.35, freq:700});
     requestAnimationFrame(loop);
   }
-
   function start(){ startLevel(level); }
 
   async function startWithCountdown(){
     if(pendingRunReset){
-      configureGrid();
-      score = 0; level = 1;
-      player.pellets = 0; pelletsTotal = 0; map = [];
-      MCOLS = COLS; MROWS = ROWS;
-      runSeed = (Math.random()*0xffffffff)>>>0; mapNonce = 0; pendingRunReset = false;
-      document.getElementById('levelName').textContent = levelNameFor(level);
-      showOverlay(DEFAULT_MENU_TITLE, DEFAULT_MENU_SUB, DEFAULT_MENU_CTA, 'menu');
-      updateHUD();
+      configureGrid(); score=0; level=1; player.pellets=0; pelletsTotal=0; map=[]; MCOLS=COLS; MROWS=ROWS;
+      runSeed=(Math.random()*0xffffffff)>>>0; mapNonce=0; pendingRunReset=false;
+      document.getElementById('levelName').textContent=levelNameFor(level);
+      showOverlay(DEFAULT_MENU_TITLE, DEFAULT_MENU_SUB, DEFAULT_MENU_CTA, 'menu'); updateHUD();
     }
-    keyStartEnabled=false;
-    UI.menu.style.display='none'; UI.veil.style.display='none';
-    mapModal.style.display='none';
+    keyStartEnabled=false; UI.menu.style.display='none'; UI.veil.style.display='none'; mapModal.style.display='none';
+    siteFooter.style.display='none'; /* ensure hidden for countdown/gameplay */
     await audio.resume();
-
     let n=3; UI.countNum.textContent=n; UI.countWrap.style.display='flex';
     const step=()=>{
-      audio.play('count_tick', {gain:0.4, freq: 320 + n*80});
+      audio.play('count_tick',{gain:0.4, freq:320+n*80});
       if(n<=1){ UI.countWrap.style.display='none'; start(); keyStartEnabled=true; return; }
-      n--; UI.countNum.textContent=n; setTimeout(step, 400);
+      n--; UI.countNum.textContent=n; setTimeout(step,400);
     };
-    setTimeout(step, 500);
+    setTimeout(step,500);
   }
 
-  UI.play.addEventListener('click', async (e)=>{
-    e.preventDefault();
-    await audio.resume();
-    if(!running) startWithCountdown();
-  });
+  UI.play.addEventListener('click', async e=>{ e.preventDefault(); await audio.resume(); if(!running) startWithCountdown(); });
 
-  // Map modal open/close
-  function openMap(){ renderMapModal(); UI.veil.style.display='block'; mapModal.style.display='block'; audio.play('ui_open',{gain:0.28, freq:640}); }
-  function closeMap(){
-    mapModal.style.display='none';
-    if(UI.menu.style.display!=='block') UI.veil.style.display='none';
-    audio.play('ui_click',{gain:0.28, freq:520});
-  }
-  mapOpenBtn.addEventListener('click', async (e)=>{ e.preventDefault(); await audio.resume(); openMap(); });
-  mapCloseBtn.addEventListener('click', (e)=>{ e.preventDefault(); closeMap(); });
+  // Map modal
+  function openMap(){ renderMapModal(); UI.veil.style.display='block'; mapModal.style.display='block'; audio.play('ui_open',{gain:0.28, freq:640}); siteFooter.style.display='none'; }
+  function closeMap(){ mapModal.style.display='none'; if(UI.menu.style.display!=='block') UI.veil.style.display='none'; audio.play('ui_click',{gain:0.28, freq:520}); }
+  mapOpenBtn.addEventListener('click', async e=>{ e.preventDefault(); await audio.resume(); openMap(); });
+  mapCloseBtn.addEventListener('click', e=>{ e.preventDefault(); closeMap(); });
   UI.veil.addEventListener('click', ()=>{ if(mapModal.style.display==='block' && UI.menu.style.display!=='block') closeMap(); });
 
   // Helpers
-  const isWall = (x,y)=> map[y]?.[x]===1;
-  const isExit = (x,y)=> map[y]?.[x]===3;
+  const isWall=(x,y)=> map[y]?.[x]===1, isExit=(x,y)=> map[y]?.[x]===3;
 
   function updatePlayer(){
     if(player.stepCooldown>0){ player.stepCooldown--; return; }
@@ -1053,39 +973,37 @@ class ReakAudio{
     else if(keys.has('ArrowRight')||keys.has('KeyD')) dx=1;
 
     if(dx||dy){
-      const nx = player.x + dx, ny = player.y + dy;
+      const nx=player.x+dx, ny=player.y+dy;
       if(!isWall(nx,ny)){
-        player.x = nx; player.y = ny; player.stepCooldown = player.stepDelay;
-        // soft step blip
-        audio.play('step', {gain:0.18, freq: 220 + ((nx+ny)%3)*30, detune: ((nx^ny)&1)?-50:0 });
+        player.x=nx; player.y=ny; player.stepCooldown=player.stepDelay;
+        audio.play('step',{gain:0.18, freq:220+((nx+ny)%3)*30, detune:((nx^ny)&1)?-50:0});
         if(map[ny][nx]===2){
-          map[ny][nx]=0; player.pellets++; score += 10; flashPickup(nx,ny);
-          audio.play('pickup', {gain:0.35, freq: 880});
+          map[ny][nx]=0; player.pellets++; score+=10; flashPickup(nx,ny);
+          audio.play('pickup',{gain:0.35, freq:880});
         }
         if(isExit(nx,ny)){
-          score += 100;
-          audio.play('exit', {gain:0.4, freq: 520});
+          score+=100; audio.play('exit',{gain:0.4, freq:520});
           nextLevel(); return;
         }
       }
     }
   }
 
-  // FX: pellet sparkle
+  // FX
   let pickupFlash=0, fxPX=0, fxPY=0;
-  function flashPickup(x,y){ pickupFlash=8; fxPX=x; fxPY=y; try{ navigator.vibrate && navigator.vibrate(10); }catch(_){ } }
+  function flashPickup(x,y){ pickupFlash=8; fxPX=x; fxPY=y; try{ navigator.vibrate&&navigator.vibrate(10); }catch(_){ } }
 
-  // Enemy BFS
+  // Enemies
   function stepHazards(){
     for(const h of hazards){
       if(h.cooldown>0){ h.cooldown--; continue; }
-      h.cooldown = h.base;
-      const q=[[h.x,h.y]]; const prev=new Map(); const key=(x,y)=>x+","+y; prev.set(key(h.x,h.y), null);
+      h.cooldown=h.base;
+      const q=[[h.x,h.y]], prev=new Map(), key=(x,y)=>x+","+y; prev.set(key(h.x,h.y),null);
       while(q.length){
-        const [x,y]=q.shift(); if(x===player.x && y===player.y) break;
+        const [x,y]=q.shift(); if(x===player.x&&y===player.y) break;
         for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nx=x+dx, ny=y+dy; const cell=map[ny]?.[nx];
-          if(cell!==1 && !prev.has(key(nx,ny))){ prev.set(key(nx,ny), [x,y]); q.push([nx,ny]); }
+          const nx=x+dx, ny=y+dy, cell=map[ny]?.[nx];
+          if(cell!==1 && !prev.has(key(nx,ny))){ prev.set(key(nx,ny),[x,y]); q.push([nx,ny]); }
         }
       }
       let cur=[player.x,player.y]; if(!prev.has(key(cur[0],cur[1]))) continue;
@@ -1095,7 +1013,7 @@ class ReakAudio{
   }
 
   function collide(){
-    if(isExit(player.x, player.y)) return false;
+    if(isExit(player.x,player.y)) return false;
     for(const h of hazards){ if(h.x===player.x && h.y===player.y){ deathScreen(); return true; } }
     return false;
   }
@@ -1104,11 +1022,11 @@ class ReakAudio{
     running=false; player.alive=false;
     if(score>high){ high=score; localStorage.setItem('reaktor404_high', String(high)); }
     const sub=`Sample collected.<br/>Seals ${player.pellets}/${pelletsTotal} | Score ${score} | ${levelNameFor(level)}<br/>High ${high}`;
-    showOverlay('DECONTAMINATION SUCCESSFUL', sub, 'Restart Run', 'victory');
-    audio.play('death', {gain:0.45, freq: 200});
+    showOverlay('DECONTAMINATION SUCCESSFUL', sub, 'Restart Run', 'victory'); // using victory style text
+    audio.play('death',{gain:0.45, freq:200});
     audio.stopBgm(0.4);
-    pendingRunReset = true;
-    keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; }, 1200);
+    pendingRunReset=true;
+    keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; },1200);
   }
 
   function nextLevel(){
@@ -1118,72 +1036,52 @@ class ReakAudio{
       const sub=`All 20 ranks cleared.<br/>Run score ${score} | High ${high}`;
       showOverlay('CONTAINMENT SECURED', sub, 'Restart Run', 'victory');
       audio.stopBgm(0.5);
-      pendingRunReset = true;
-      player.pellets = 0; player.alive = false;
-      keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; }, 600);
+      pendingRunReset=true; player.pellets=0; player.alive=false;
+      keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; },600);
       return;
     }
     const sub=`${levelNameFor(level)} complete | Seals ${player.pellets}/${pelletsTotal} | Score ${score}<br/>High ${high}`;
     showOverlay('SECTOR CLEARED', sub, 'Next Sector', 'victory');
     audio.stopBgm(0.35);
-    level++; player.pellets = 0;
-    keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; }, 400);
+    level++; player.pellets=0;
+    keyStartEnabled=false; setTimeout(()=>{ keyStartEnabled=true; },400);
   }
 
   function updateHUD(){
-    document.getElementById('levelName').textContent = levelNameFor(level);
-    UI.score.textContent = `Seals: ${player.pellets}/${pelletsTotal} | Score: ${score} | L${level}`;
+    document.getElementById('levelName').textContent=levelNameFor(level);
+    UI.score.textContent=`Seals: ${player.pellets}/${pelletsTotal} | Score: ${score} | L${level}`;
   }
 
-  // Drawing
+  // Draw
   let drawTick=0;
   function draw(){
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio||1));
-    const cssW = cvs.clientWidth | 0, cssH = cvs.clientHeight | 0;
-    if(cvs.width !== cssW*dpr || cvs.height !== cssH*dpr){
-      cvs.width = cssW*dpr; cvs.height = cssH*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
-    }
-
+    const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+    const cssW=cvs.clientWidth|0, cssH=cvs.clientHeight|0;
+    if(cvs.width!==cssW*dpr || cvs.height!==cssH*dpr){ cvs.width=cssW*dpr; cvs.height=cssH*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); }
     drawTick++;
     ctx.fillStyle=FLOOR; ctx.fillRect(0,0,cssW,cssH);
-
-    const cell = Math.floor(Math.min(cssW, cssH)/COLS);
-    const offX = Math.floor((cssW - cell*COLS)/2);
-    const offY = Math.floor((cssH - cell*ROWS)/2);
-
+    const cell=Math.floor(Math.min(cssW,cssH)/COLS);
+    const offX=Math.floor((cssW-cell*COLS)/2), offY=Math.floor((cssH-cell*ROWS)/2);
     for(let y=0;y<MROWS;y++){
       for(let x=0;x<MCOLS;x++){
-        const c=map[y][x];
-        const px=offX + x*cell, py=offY + y*cell;
-        if(c===1){
-          ctx.fillStyle=WALL; ctx.fillRect(px,py,cell,cell);
-          ctx.fillStyle='rgba(61,255,122,.05)'; ctx.fillRect(px+2,py+2,cell-4,cell-4);
-        } else if(c===2){
-          ctx.fillStyle=PELLET; const s=Math.max(3, Math.floor(cell*0.25)); const pad=(cell-s)>>1; ctx.fillRect(px+pad,py+pad,s,s);
-        } else if(c===3){
-          const a=0.6+0.35*Math.sin(drawTick*0.1); ctx.fillStyle=`rgba(255,211,77,${a})`;
-          const s=Math.max(6, Math.floor(cell*0.6)); const pad=(cell-s)>>1; ctx.fillRect(px+pad,py+pad,s,s);
-        }
+        const c=map[y][x], px=offX+x*cell, py=offY+y*cell;
+        if(c===1){ ctx.fillStyle=WALL; ctx.fillRect(px,py,cell,cell); ctx.fillStyle='rgba(61,255,122,.05)'; ctx.fillRect(px+2,py+2,cell-4,cell-4); }
+        else if(c===2){ ctx.fillStyle=PELLET; const s=Math.max(3,Math.floor(cell*0.25)); const pad=(cell-s)>>1; ctx.fillRect(px+pad,py+pad,s,s); }
+        else if(c===3){ const a=0.6+0.35*Math.sin(drawTick*0.1); ctx.fillStyle=`rgba(255,211,77,${a})`; const s=Math.max(6,Math.floor(cell*0.6)); const pad=(cell-s)>>1; ctx.fillRect(px+pad,py+pad,s,s); }
       }
     }
-
     if(pickupFlash>0){
-      const px=offX + fxPX*cell, py=offY + fxPY*cell;
+      const px=offX+fxPX*cell, py=offY+fxPY*cell;
       ctx.strokeStyle='rgba(157,255,197,.9)'; ctx.lineWidth=1;
-      const pad=Math.max(2, Math.floor(cell*0.15));
-      ctx.strokeRect(px+pad-pickupFlash/2, py+pad-pickupFlash/2, cell-2*pad+pickupFlash, cell-2*pad+pickupFlash);
-      pickupFlash--;
+      const pad=Math.max(2,Math.floor(cell*0.15));
+      ctx.strokeRect(px+pad-pickupFlash/2, py+pad-pickupFlash/2, cell-2*pad+pickupFlash, cell-2*pad+pickupFlash); pickupFlash--;
     }
-
-    ctx.fillStyle=PLAYER;
-    const ppx=offX + player.x*cell, ppy=offY + player.y*cell;
+    ctx.fillStyle=PLAYER; const ppx=offX+player.x*cell, ppy=offY+player.y*cell;
     ctx.fillRect(ppx+Math.floor(cell*0.18), ppy+Math.floor(cell*0.18), Math.floor(cell*0.64), Math.floor(cell*0.64));
-
     for(const h of hazards){
-      const gx=offX + h.x*cell, gy=offY + h.y*cell;
+      const gx=offX+h.x*cell, gy=offY+h.y*cell;
       ctx.fillStyle=RADIATION; ctx.fillRect(gx+Math.floor(cell*0.12), gy+Math.floor(cell*0.12), Math.floor(cell*0.76), Math.floor(cell*0.76));
-      ctx.fillStyle='#111';
-      const eye= Math.max(2, Math.floor(cell*0.16));
+      ctx.fillStyle='#111'; const eye=Math.max(2,Math.floor(cell*0.16));
       ctx.fillRect(gx+Math.floor(cell*0.28), gy+Math.floor(cell*0.34), eye, eye);
       ctx.fillRect(gx+Math.floor(cell*0.64), gy+Math.floor(cell*0.34), eye, eye);
     }
@@ -1191,21 +1089,17 @@ class ReakAudio{
 
   function loop(){
     if(!running) return;
-    updatePlayer();
-    if(!running){ updateHUD(); draw(); return; }
-    stepHazards();
-    if(!running) return;
+    updatePlayer(); if(!running){ updateHUD(); draw(); return; }
+    stepHazards(); if(!running) return;
     if(collide()){ updateHUD(); draw(); return; }
-    updateHUD();
-    draw();
-    requestAnimationFrame(loop);
+    updateHUD(); draw(); requestAnimationFrame(loop);
   }
 
-  // Self-tests (unchanged)
+  // Self-test (unchanged)
   (function selfTest(){
     const errs=[];
     for(let i=1;i<=4;i++){
-      const raw = buildRawForLevel(i, (i * 0x9e3779b9) >>> 0);
+      const raw=buildRawForLevel(i,(i*0x9e3779b9)>>>0);
       const cols=raw[0].length; raw.forEach((row,ri)=>{ if(row.length!==cols) errs.push(`Lvl ${i} row ${ri+1} width ${row.length} != ${cols}`); });
       const b=buildMapFromRaw(raw);
       const spawn=findPlayerSpawn(b.map,b.cols,b.rows);
@@ -1213,12 +1107,14 @@ class ReakAudio{
       let hasExit=false; for(let y=1;y<b.rows-1;y++) for(let x=1;x<b.cols-1;x++) if(b.map[y][x]===3) hasExit=true; if(!hasExit) errs.push('No interior exit in level '+i);
       let pel=0; for(let y=0;y<b.rows;y++) for(let x=0;x<b.cols;x++) if(b.map[y][x]===2) pel++; if(pel<=0) errs.push('No seals in level '+i);
       const key=(x,y)=>x+','+y; const q=[[spawn.x,spawn.y]]; const seen=new Set([key(spawn.x,spawn.y)]); let ex=null; for(let yy=1;yy<b.rows-1;yy++) for(let xx=1;xx<b.cols-1;xx++) if(b.map[yy][xx]===3) ex={x:xx,y:yy};
-      let canExit=false; while(q.length){ const [x,y]=q.shift(); if(ex && x===ex.x && y===ex.y){ canExit=true; break; } for(const [dx,dy] of [[1,0],[ -1,0],[0,1],[0,-1]]){ const nx=x+dx, ny=y+dy; if(b.map[ny]?.[nx]!==1){ const k=key(nx,ny); if(!seen.has(k)){ seen.add(k); q.push([nx,ny]); } } } }
-      if(!canExit) errs.push('Exit unreachable in level '+i);
+      let canExit=false; while(q.length){ const [x,y]=q.shift(); if(ex&&x===ex.x&&y===ex.y){ canExit=true; break; }
+        for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nx=x+dx, ny=y+dy; if(b.map[ny]?.[nx]!==1){ const k=key(nx,ny); if(!seen.has(k)){ seen.add(k); q.push([nx,ny]); } } }
+    }
+    if(!canExit) errs.push('Exit unreachable in level '+i);
     }
     if(!(BASE_PLAYER_DELAY>=1 && MIN_PLAYER_DELAY>=1 && BASE_PLAYER_DELAY>=MIN_PLAYER_DELAY)) errs.push('Invalid player step timing');
     if(!(BASE_RADIO_DELAY>=2)) errs.push('Invalid hazard timing');
-
     if(errs.length){ console.error('[Reaktor 404 self-test FAIL]', errs); throw new Error('[Reaktor 404 self-test FAIL]'); }
     else { console.log('[Reaktor 404 self-test PASS]'); }
   })();
@@ -1226,36 +1122,19 @@ class ReakAudio{
   // Initial overlay
   (function showStart(){
     document.getElementById('veil').style.display='block';
+    siteFooter.style.display='none'; // hidden on menu by default
     showOverlay('REAKTOR 404', document.getElementById('menuSub').innerHTML, 'Start', 'menu');
   })();
 
   // Canvas sizing
   function sizeCanvasToConsole(){
-    if(!isDesktopFinePointer()){
-      cvs.style.width = '100%';
-      cvs.style.height = 'auto';
-      return;
-    }
-    const pad = 10 * 2; // .frame padding
-    const headH = headEl.getBoundingClientRect().height;
-    const footH = footEl.getBoundingClientRect().height;
-
-    const availableW = Math.floor(consoleEl.clientWidth - 0);
-    const availableH = Math.floor(window.innerHeight - headH - footH - 32);
-
-    const MIN_DESK = 420;
-    const MAX_DESK = 720;
-    const target = Math.floor(window.innerHeight * 0.72);
-
-    const size = Math.max(
-      MIN_DESK,
-      Math.min(MAX_DESK, target, availableW - pad, availableH - pad)
-    );
-
-    cvs.style.width = size + 'px';
-    cvs.style.height = size + 'px';
+    if(!isDesktopFinePointer()){ cvs.style.width='100%'; cvs.style.height='auto'; return; }
+    const pad=10*2, headH=headEl.getBoundingClientRect().height, footH=footEl.getBoundingClientRect().height;
+    const availableW=Math.floor(consoleEl.clientWidth-0), availableH=Math.floor(window.innerHeight-headH-footH-32);
+    const MIN_DESK=420, MAX_DESK=720, target=Math.floor(window.innerHeight*0.72);
+    const size=Math.max(MIN_DESK, Math.min(MAX_DESK, target, availableW-pad, availableH-pad));
+    cvs.style.width=size+'px'; cvs.style.height=size+'px';
   }
-
   window.addEventListener('resize', sizeCanvasToConsole);
   window.addEventListener('orientationchange', sizeCanvasToConsole);
   requestAnimationFrame(sizeCanvasToConsole);
@@ -1269,42 +1148,29 @@ class ReakAudio{
     if(!isTouch || !joy) { if(wrap) wrap.style.display='none'; return; }
 
     const dirKey = {up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight'};
-    let pointerId=null, ox=0, oy=0;
+    let pointerId=null;
 
     const dead = 10; // px deadzone
     const maxR = () => (joy.clientWidth * 0.38); // knob travel radius
 
     function setDirFrom(dx, dy){
-      const ax = Math.abs(dx), ay = Math.abs(dy);
+      const ax=Math.abs(dx), ay=Math.abs(dy);
       const withinDead = (Math.hypot(dx,dy) < dead);
-      // clear old
       Object.values(dirKey).forEach(k=> keys.delete(k));
       if(withinDead) return;
-      if(ax > ay){
-        keys.add(dx>0 ? dirKey.right : dirKey.left);
-      }else{
-        keys.add(dy>0 ? dirKey.down : dirKey.up);
-      }
+      if(ax > ay){ keys.add(dx>0 ? dirKey.right : dirKey.left); }
+      else{ keys.add(dy>0 ? dirKey.down : dirKey.up); }
     }
 
     function placeKnob(dx,dy){
-      const rMax = maxR();
-      const mag = Math.hypot(dx,dy);
-      const scale = mag>rMax ? (rMax/mag) : 1;
-      const x = dx*scale, y=dy*scale;
+      const rMax=maxR(), mag=Math.hypot(dx,dy), scale=mag>rMax ? (rMax/mag) : 1;
+      const x=dx*scale, y=dy*scale;
       knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
     }
-
-    function centerKnob(){
-      knob.style.transform = 'translate(-50%,-50%)';
-    }
+    function centerKnob(){ knob.style.transform='translate(-50%,-50%)'; }
 
     joy.addEventListener('pointerdown', async (e)=>{
-      if(e.pointerType!=='touch' && e.pointerType!=='pen' && e.pointerType!=='mouse') return;
-      pointerId = e.pointerId;
-      const rect = joy.getBoundingClientRect();
-      ox = e.clientX - (rect.left + rect.width/2);
-      oy = e.clientY - (rect.top  + rect.height/2);
+      pointerId=e.pointerId;
       try{ joy.setPointerCapture(pointerId); }catch(_){}
       await audio.resume();
       e.preventDefault();
@@ -1312,11 +1178,10 @@ class ReakAudio{
 
     joy.addEventListener('pointermove', (e)=>{
       if(e.pointerId!==pointerId) return;
-      const rect = joy.getBoundingClientRect();
-      const dx = e.clientX - (rect.left + rect.width/2);
-      const dy = e.clientY - (rect.top  + rect.height/2);
-      placeKnob(dx,dy);
-      setDirFrom(dx,dy);
+      const rect=joy.getBoundingClientRect();
+      const dx=e.clientX-(rect.left+rect.width/2);
+      const dy=e.clientY-(rect.top+rect.height/2);
+      placeKnob(dx,dy); setDirFrom(dx,dy);
       e.preventDefault();
     }, {passive:false});
 
@@ -1325,11 +1190,11 @@ class ReakAudio{
       Object.values(dirKey).forEach(k=> keys.delete(k));
       centerKnob();
     }
-    joy.addEventListener('pointerup',   (e)=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
-    joy.addEventListener('pointercancel',(e)=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
-    joy.addEventListener('pointerleave', (e)=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
+    joy.addEventListener('pointerup',    e=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
+    joy.addEventListener('pointercancel',e=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
+    joy.addEventListener('pointerleave', e=>{ if(e.pointerId!==pointerId) return; end(); e.preventDefault(); }, {passive:false});
 
-    // Also: tap joystick to start game/audio
+    // Tap joystick to start run/audio
     joy.addEventListener('pointerdown', async ()=>{
       if(!running && keyStartEnabled){ await audio.resume(); startWithCountdown(); }
     }, {passive:true});
@@ -1337,43 +1202,22 @@ class ReakAudio{
 
   // Tap-to-move on canvas + start on tap
   (function setupTapMove(){
-    const pressOnce = (code)=>{
-      keys.add(code);
-      try{ navigator.vibrate && navigator.vibrate(6); }catch(_){}
-      setTimeout(()=> keys.delete(code), 60);
-    };
+    const pressOnce = (code)=>{ keys.add(code); try{ navigator.vibrate&&navigator.vibrate(6); }catch(_){ } setTimeout(()=> keys.delete(code), 60); };
     const handleTap = (clientX, clientY)=>{
-      const cssW = cvs.clientWidth | 0, cssH = cvs.clientHeight | 0;
-      const cell = Math.floor(Math.min(cssW, cssH)/COLS);
-      const offX = Math.floor((cssW - cell*COLS)/2);
-      const offY = Math.floor((cssH - cell*ROWS)/2);
-
-      const rect = cvs.getBoundingClientRect();
-      const x = clientX - rect.left;
-      const y = clientY - rect.top;
-
-      const ppx = offX + (player.x + .5)*cell;
-      const ppy = offY + (player.y + .5)*cell;
-
-      const dx = x - ppx;
-      const dy = y - ppy;
-
-      if(Math.abs(dx) > Math.abs(dy)){
-        pressOnce(dx > 0 ? 'ArrowRight' : 'ArrowLeft');
-      } else {
-        pressOnce(dy > 0 ? 'ArrowDown' : 'ArrowUp');
-      }
+      const cssW=cvs.clientWidth|0, cssH=cvs.clientHeight|0;
+      const cell=Math.floor(Math.min(cssW,cssH)/COLS);
+      const offX=Math.floor((cssW-cell*COLS)/2), offY=Math.floor((cssH-cell*ROWS)/2);
+      const rect=cvs.getBoundingClientRect();
+      const x=clientX-rect.left, y=clientY-rect.top;
+      const ppx=offX+(player.x+.5)*cell, ppy=offY+(player.y+.5)*cell;
+      const dx=x-ppx, dy=y-ppy;
+      if(Math.abs(dx)>Math.abs(dy)) pressOnce(dx>0?'ArrowRight':'ArrowLeft');
+      else pressOnce(dy>0?'ArrowDown':'ArrowUp');
     };
-
-    cvs.addEventListener('pointerup', async (e)=>{
-      if(e.pointerType==='mouse' || e.pointerType==='touch'){
-        await audio.resume();
-        handleTap(e.clientX, e.clientY);
-        e.preventDefault();
-      }
+    cvs.addEventListener('pointerup', async e=>{
+      if(e.pointerType==='mouse'||e.pointerType==='touch'){ await audio.resume(); handleTap(e.clientX,e.clientY); e.preventDefault(); }
     }, {passive:false});
-
-    cvs.addEventListener('pointerdown', async (e)=>{
+    cvs.addEventListener('pointerdown', async e=>{
       if(!running && keyStartEnabled){ await audio.resume(); startWithCountdown(); }
     }, {passive:true});
   })();
