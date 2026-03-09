@@ -1,13 +1,6 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>REAKTOR 404 | Cleaners Run</title>
-<meta name="theme-color" content="#0b0b0b" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Doto:wght@400..900&family=Sixtyfour+Convergence:SCAN@-45..45&display=swap" rel="stylesheet" />
 <!-- Base -->
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
@@ -98,7 +91,7 @@
   --bevel-top:rgba(255,255,255,.1); --bevel-bottom:rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
-html,body{height:100%; margin:0}
+html,body{height:100%; margin:0; overflow:hidden;}
 body{
   min-height:100dvh; background:var(--bg); color:var(--ink);
   font-family:"Doto",system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;
@@ -611,6 +604,10 @@ class ReakAudio{
   // Input
   const keys=new Set();
   window.addEventListener('keydown', async (e)=>{
+    // Prevent page scrolling for game controls
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+      e.preventDefault();
+    }
     if (paused || transitioning) return; // ignore during pause/transition
     keys.add(e.code);
     if(!running && (e.code.startsWith('Arrow')||e.code.startsWith('Key')||e.code==='Enter'||e.code==='Space')){
@@ -914,7 +911,14 @@ class ReakAudio{
     mt.innerHTML = '<span class="menu-top">REAKTOR</span><span class="menu-bottom">404</span>';
     document.getElementById('menuLead').textContent = '';
     document.getElementById('menu').classList.remove('overlay-hero');
-    UI.veil.style.display='block'; UI.menu.style.display='block'; UI.menu.querySelector('.subtitle').innerHTML=DEFAULT_MENU_SUB;
+    UI.veil.style.display='block'; UI.menu.style.display='block';
+    // If running directly from file://, warn that audio may be blocked until served over HTTP
+    if (location.protocol === 'file:') {
+      UI.menu.querySelector('.subtitle').innerHTML = DEFAULT_MENU_SUB +
+        '<br /><br /><b>Note:</b> For sound to work, run this file via a local web server (http://...), not by opening it directly from disk.';
+    } else {
+      UI.menu.querySelector('.subtitle').innerHTML = DEFAULT_MENU_SUB;
+    }
   })();
 })();
 </script>
